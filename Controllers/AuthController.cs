@@ -30,6 +30,8 @@ namespace TaskManagerApi.Controllers
 
             if (user.Password.Length < 6) return BadRequest("Password needs to be more than 6 characters.");
 
+            user.Password = BCrypt.Net.BCrypt.HashPassword(user.Password);
+
             _dbContext.Users.Add(user);
             await _dbContext.SaveChangesAsync();
 
@@ -39,11 +41,11 @@ namespace TaskManagerApi.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> LoginUser([FromBody] User user)
         {
-            var userFromDb = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == user.Username
-                && u.Password == user.Password);
+            var userFromDb = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == user.Username);
 
-            if (userFromDb == null) return Unauthorized("Invalid username or password.");
-
+            if (userFromDb == null || !BCrypt.Net.BCrypt.Verify(user.Password,userFromDb.Password)) 
+                return Unauthorized("Invalid username or password.");
+            
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
 
             var claims = new List<Claim>
@@ -56,7 +58,7 @@ namespace TaskManagerApi.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddDays(1),
+                expires: DateTime.UtcNow.AddHours(6.30),
                 signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
             );
 

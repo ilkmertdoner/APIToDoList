@@ -20,7 +20,10 @@ namespace TaskManagerApi.Controllers
 
         private string GetUserIdFromHeader()
         {
-            if (Request.Headers.TryGetValue("user-id", out var userId)) return userId.ToString();
+            //Authorize kullandığımız için claim ile erişilmelidir.
+            var UserIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
+
+            if (!string.IsNullOrEmpty(UserIdClaim)) return UserIdClaim;
 
             return "unknown";
         }
@@ -109,7 +112,7 @@ namespace TaskManagerApi.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult>CreateTask([FromBody] TaskItem task)
+        public async Task<IActionResult> CreateTask([FromBody] TaskItem task)
         {
             if (task == null) return BadRequest();
 
