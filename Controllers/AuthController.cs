@@ -3,7 +3,6 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Identity.Client;
 using Microsoft.IdentityModel.Tokens;
 using TaskManagerApi.Data;
 using TaskManagerApi.Models;
@@ -24,20 +23,23 @@ namespace TaskManagerApi.Controllers
         }
 
         [HttpPost("register")]
-        public IActionResult RegisterUser([FromBody] User user)
+        public async Task<IActionResult> RegisterUser([FromBody] User user)
         {
-            if (_dbContext.Users.Any(u => u.Username == user.Username)) return BadRequest("Username already exists.");
+            if (await _dbContext.Users.AnyAsync(u => u.Username == user.Username))
+                return BadRequest("Username already exists.");
+
+            if (user.Password.Length < 6) return BadRequest("Password needs to be more than 6 characters.");
 
             _dbContext.Users.Add(user);
-            _dbContext.SaveChanges();
+            await _dbContext.SaveChangesAsync();
 
             return Ok(new { message = "Successfully Registered!" });
         }
 
         [HttpPost("login")]
-        public IActionResult LoginUser([FromBody] User user)
+        public async Task<IActionResult> LoginUser([FromBody] User user)
         {
-            var userFromDb = _dbContext.Users.FirstOrDefault(u => u.Username == user.Username
+            var userFromDb = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == user.Username
                 && u.Password == user.Password);
 
             if (userFromDb == null) return Unauthorized("Invalid username or password.");
@@ -69,4 +71,3 @@ namespace TaskManagerApi.Controllers
         }
     }
 }
- 

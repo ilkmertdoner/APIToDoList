@@ -60,8 +60,8 @@ namespace TaskManagerApi.Controllers
         {
             var currentUserId = GetUserIdFromHeader();
             var favoriteTasks =
-                await _dbContext.TaskItems.Where(t => t.TokenId == currentUserId && t.isFavorite && t.isDeleted 
-                    == false).ToListAsync();
+                await _dbContext.TaskItems.Where(t => t.TokenId == currentUserId && t.isFavorite && t.isDeleted == false)
+                .ToListAsync();
 
             return Ok(favoriteTasks);
         }
@@ -158,17 +158,17 @@ namespace TaskManagerApi.Controllers
         }
 
         [HttpDelete("{id}")]
-        public IActionResult DeleteTask(int id)
+        public async Task<IActionResult> DeleteTask(int id)
         {
             var userId = GetUserIdFromHeader();
-            var task = _dbContext.TaskItems.FirstOrDefault(t => t.Id == id && t.TokenId == userId);
+            var task = await _dbContext.TaskItems.FirstOrDefaultAsync(t => t.Id == id && t.TokenId == userId);
 
             if (task != null)
             {
                 try
                 {
                     _dbContext.TaskItems.Remove(task);
-                    _dbContext.SaveChanges();
+                    await _dbContext.SaveChangesAsync();
 
                     return NoContent();
                 }
