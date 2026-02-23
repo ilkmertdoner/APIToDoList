@@ -43,9 +43,9 @@ namespace TaskManagerApi.Controllers
         {
             var userFromDb = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == user.Username);
 
-            if (userFromDb == null || !BCrypt.Net.BCrypt.Verify(user.Password,userFromDb.Password)) 
+            if (userFromDb == null || !BCrypt.Net.BCrypt.Verify(user.Password, userFromDb.Password))
                 return Unauthorized("Invalid username or password.");
-            
+
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
 
             var claims = new List<Claim>

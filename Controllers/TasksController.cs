@@ -30,32 +30,45 @@ namespace TaskManagerApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetTasks([FromQuery] string? search, [FromQuery] string? status,
-            [FromQuery] int? priority, [FromQuery] DateTime? dueDate)
+        public async Task<IActionResult> GetTasks([FromQuery] string search = "", [FromQuery] string status = "all",
+            [FromQuery] int? priority = null)
         {
-            var currentUserId = GetUserIdFromHeader();
+            var currentUserIdStr = GetUserIdFromHeader();
+            int currentUserId = int.Parse(currentUserIdStr);
 
-            var query = _dbContext.TaskItems.Where(t => t.TokenId == currentUserId && !t.isDeleted);
+            var query = _dbContext.TaskItems.Where(t => t.TokenId == currentUserIdStr ||
+                t.Assign.Any(x => x.UserId == currentUserId) && t.isDeleted == false).AsQueryable();
 
             if (!string.IsNullOrEmpty(search))
+                query = query.Where(t => t.Title.Contains(search) || t.Description.Contains(search));
+
+            if (status == "active") query = query.Where(t => t.IsCompleted == false);
+            else if (status == "completed") query = query.Where(t => t.IsCompleted == true);
+
+            if (priority.HasValue) query = query.Where(t => t.Priority == priority.Value);
+
+            var tasks = await query.Select(t => new
             {
-                string searchLower = search.ToLower();
-                query = query.Where(t => (t.Title != null && t.Title.ToLower().Contains(searchLower)) ||
-                (t.Description != null && t.Description.ToLower().Contains(searchLower)));
-            }
+                // automapper kullanılabilir.
+                Id = t.Id,
+                Title = t.Title,
+                Description = t.Description,
+                Priority = t.Priority,
+                DueDate = t.DueDate,
+                IsCompleted = t.IsCompleted,
+                IsFavorite = t.isFavorite,
+                IsDeleted = t.isDeleted,
+                TokenId = t.TokenId,
+                Assign = t.Assign.Select(a => new
+                {
+                    UserId = a.UserId,
+                    User = new
+                    {
+                        Username = a.User.Username
+                    }
+                }).ToList()
+            }).ToListAsync();
 
-            if (!string.IsNullOrEmpty(status))
-            {
-                var filterStatus = status.ToLower();
-                if (filterStatus == "completed") { query = query.Where(t => t.IsCompleted == true); }
-                else if (filterStatus == "active") { query = query.Where(t => t.IsCompleted == false); }
-            }
-
-            if (priority.HasValue) { query = query.Where(t => t.Priority == priority.Value); }
-
-            if (dueDate.HasValue) { query = query.Where(t => t.DueDate.Value.Date == dueDate.Value.Date); }
-
-            var tasks = await query.OrderByDescending(t => t.Id).ToListAsync();
             return Ok(tasks);
         }
 
@@ -63,9 +76,8 @@ namespace TaskManagerApi.Controllers
         public async Task<IActionResult> GetFavorite()
         {
             var currentUserId = GetUserIdFromHeader();
-            var favoriteTasks =
-                await _dbContext.TaskItems.Where(t => t.TokenId == currentUserId && t.isFavorite && t.isDeleted == false)
-                .ToListAsync();
+            var favoriteTasks = await _dbContext.TaskItems.Where(t => t.TokenId == currentUserId && t.isFavorite
+                && t.isDeleted == false).ToListAsync();
 
             return Ok(favoriteTasks);
         }
@@ -183,6 +195,110 @@ namespace TaskManagerApi.Controllers
             }
 
             return NotFound();
+        }
+
+        [HttpPost("{taskId}/assign/{userId}")]
+        public async Task<IActionResult> AssignUserToTask(int taskId, int userId)
+        {
+            var currentUserIdStr = GetUserIdFromHeader();
+            int currentUserId = int.Parse(currentUserIdStr);
+
+            var task = await _dbContext.TaskItems.FindAsync(taskId);
+            if (task == null) return NotFound("Görev bulunamadı.");
+
+            if (task.TokenId != currentUserIdStr) return Forbid("Sadece kendi görevlerinize kişi atayabilirsiniz.");
+
+            var targetUser = await _dbContext.Users.FindAsync(userId);
+            if (targetUser == null) return NotFound("Kullanıcı bulunamadı.");
+
+            var existingAssign = await _dbContext.TaskAssign
+                .FirstOrDefaultAsync(a => a.TaskId == taskId && a.UserId == userId);
+            if (existingAssign != null) return BadRequest("Bu kullanıcı zaten bu göreve atanmış.");
+
+            var newAssign = new TaskAssign
+            {
+                TaskId = taskId,
+                UserId = userId
+            };
+            _dbContext.TaskAssign.Add(newAssign);
+
+            var currentUser = await _dbContext.Users.FindAsync(currentUserId);
+
+            _dbContext.ActivityLogs.Add(new ActivityLog
+            {
+                TokenId = currentUserIdStr,
+                Action = "Göreve Ortak Eklendi",
+                Details = $"'{task.Title}' adlı göreve @{targetUser.Username} kişisini atadınız."
+            });
+
+            _dbContext.ActivityLogs.Add(new ActivityLog
+            {
+                TokenId = targetUser.Id.ToString(),
+                Action = "Yeni Görev Ataması",
+                Details = $"@{currentUser.Username} sizi '{task.Title}' adlı göreve atadı."
+            });
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { message = "Kişi göreve başarıyla atandı ve bildirim gönderildi." });
+        }
+
+        [HttpDelete("{taskId}/assign/{userId}")]
+        public async Task<IActionResult> RemoveUserFromTask(int taskId, int userId)
+        {
+            var currentUserIdStr = GetUserIdFromHeader();
+            int currentUserId = int.Parse(currentUserIdStr);
+
+            var task = await _dbContext.TaskItems.FindAsync(taskId);
+            if (task == null) return NotFound("Görev bulunamadı.");
+
+            if (task.TokenId != currentUserIdStr && currentUserId != userId)
+                return Forbid("Bu işlem için yetkiniz yok.");
+
+            var assign = await _dbContext.TaskAssign.FirstOrDefaultAsync(a => a.TaskId == taskId && a.UserId == userId);
+            if (assign == null) return BadRequest("Kullanıcı bu görevde bulunamadı.");
+
+            _dbContext.TaskAssign.Remove(assign);
+
+            var currentUser = await _dbContext.Users.FindAsync(currentUserId);
+            var targetUser = await _dbContext.Users.FindAsync(userId);
+
+            if (currentUserId == userId)
+            {
+                _dbContext.ActivityLogs.Add(new ActivityLog
+                {
+                    TokenId = task.TokenId,
+                    Action = "Görevden Ayrılma",
+                    Details = $"@{currentUser.Username}, '{task.Title}' görevinden ayrıldı."
+                });
+            }
+            else
+            {
+                _dbContext.ActivityLogs.Add(new ActivityLog
+                {
+                    TokenId = targetUser.Id.ToString(),
+                    Action = "Görevden Çıkarılma",
+                    Details = $"@{currentUser.Username}, sizi '{task.Title}' görevinden çıkardı."
+                });
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { message = "Kullanıcı görevden çıkarıldı." });
+        }
+
+        [HttpGet("recent-activities")]
+        public async Task<IActionResult> GetRecentActivities()
+        {
+            var currentUserId = GetUserIdFromHeader();
+
+            var logs = await _dbContext.ActivityLogs
+                .Where(l => l.TokenId == currentUserId)
+                .OrderBy(l => l.CreatedAt)
+                .Take(50)
+                .ToListAsync();
+
+            return Ok(logs);
         }
     }
 }
