@@ -356,15 +356,19 @@ async function filterTasks(category) {
     const title = document.getElementById('pageTitle');
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebarOverlay');
-    document.querySelectorAll('#sidebar button').forEach(btn => {
+
+    document.querySelectorAll('#sidebar button[onclick^="filterTasks"]').forEach(btn => {
         btn.className = "w-full flex items-center gap-3 px-4 py-2.5 text-left rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#2c2c2c] transition-colors";
     });
+
     const activeBtn = document.querySelector(`#sidebar button[onclick="filterTasks('${category}')"]`);
     if (activeBtn) activeBtn.className = "w-full flex items-center gap-3 px-4 py-2.5 text-left rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors";
+
     if (window.innerWidth < 768) {
         if (sidebar) sidebar.classList.add('-translate-x-full');
         if (overlay) overlay.classList.add('hidden');
     }
+
     const filters = document.querySelectorAll('.filter-control');
     switch (category) {
         case 'all':
@@ -651,8 +655,8 @@ async function saveTask() {
 
     let finalDueDate = null;
     if (dateOnlyInput.value) {
-        const timePart = timeOnlyInput.value ? timeOnlyInput.value : "00:00";
-        finalDueDate = `${dateOnlyInput.value}T${timePart}`;
+        const timePart = timeOnlyInput.value ? timeOnlyInput.value : "00:00:00";
+        finalDueDate = `${dateOnlyInput.value}T${timePart.length === 5 ? timePart + ":00" : timePart}`;
     }
 
     const taskData = {

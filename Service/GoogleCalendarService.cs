@@ -35,21 +35,23 @@ namespace TaskManagerApi.Service
         {
             var service = GetCalendarService();
 
+            string startStr = dueDate.ToString("yyyy-MM-ddTHH:mm:ss");
+            string endStr = dueDate.AddHours(1).ToString("yyyy-MM-ddTHH:mm:ss");
+
             Event newEvent = new Event()
             {
                 Summary = title,
                 Description = description,
                 Start = new EventDateTime()
                 {
-                    DateTime = dueDate,
-                    TimeZone = "Europe/Istanbul"
+                    DateTimeRaw = startStr,
+                    TimeZone = "Europe/Istanbul",
                 },
-
                 End = new EventDateTime()
                 {
-                    DateTime = dueDate.Date.AddHours(1),
-                    TimeZone = "Europe/Istanbul"
-                },
+                    DateTimeRaw = endStr,
+                    TimeZone = "Europe/Istanbul",
+                }
             };
 
             EventsResource.InsertRequest request = service.Events.Insert(newEvent, userEmail);
