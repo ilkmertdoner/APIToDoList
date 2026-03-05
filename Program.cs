@@ -68,6 +68,12 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddScoped<GoogleCalendarService>();
+builder.Services.AddScoped<MicrosoftCalendarService>();
+
+builder.Configuration.AddJsonFile("microsoft-credentials.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile("google-credentials.json", optional: true, reloadOnChange: true);
+
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 

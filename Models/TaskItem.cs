@@ -11,7 +11,7 @@ namespace TaskManagerApi.Models
         public string? Description { get; set; }
         public int Priority { get; set; } = 0;
         public DateTime DateTime { get; set; } = DateTime.Now;
-        
+
         [JsonPropertyName("dueDate")]
         public DateTime? DueDate { get; set; }
         public bool IsCompleted { get; set; }
@@ -19,6 +19,7 @@ namespace TaskManagerApi.Models
         public bool isDeleted { get; set; } = false;
         public string? TokenId { get; set; }
         public string? GoogleCalendarEventId { get; set; }
+        public string? MicrosoftCalendarEventId { get; set; }
 
         [JsonIgnore]
         public ICollection<TaskAssign>? Assign { get; set; }

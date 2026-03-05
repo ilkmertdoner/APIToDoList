@@ -2,6 +2,13 @@ const apiUrl = "https://localhost:7133/api";
 let globalTasks = [];
 
 document.addEventListener("DOMContentLoaded", () => {
+    const username = localStorage.getItem("username");
+    if (username) {
+        const display = document.getElementById("userDisplay");
+        display.textContent = username;
+        display.title = username; 
+    }
+
     const savedTheme = localStorage.getItem('theme');
     const themeIcon = document.getElementById('themeIcon');
     const html = document.documentElement;
@@ -403,15 +410,20 @@ async function getTasks() {
     const statusVal = document.getElementById("statusFilter")?.value || "all";
     const priorityVal = document.getElementById("priorityFilter")?.value || "";
     const sortOrder = document.getElementById("sortOrder")?.value || "default";
-    const pageTitle = document.getElementById('pageTitle').textContent;
+    const pageTitle = document.getElementById('pageTitle') ? document.getElementById('pageTitle').textContent : "Tüm Görevler";
+
     if (pageTitle.includes("Favoriler")) { fetchAndRender(`${apiUrl}/Tasks/favorites`); return; }
     if (pageTitle.includes("Çöp Kutusu")) { fetchAndRender(`${apiUrl}/Tasks/bin`); return; }
+
     let queryUrl = `${apiUrl}/Tasks?search=${searchVal}&status=${statusVal}`;
     if (priorityVal) queryUrl += `&priority=${priorityVal}`;
+
     try {
         const response = await fetch(queryUrl, { method: "GET", headers: getHeaders() });
         if (handleApiError(response)) return;
+
         let tasks = await response.json();
+
         if (sortOrder === "dateAsc") {
             tasks.sort((a, b) => {
                 const da = a.dueDate || a.DueDate; const db = b.dueDate || b.DueDate;
@@ -452,17 +464,18 @@ async function toggleSubtask(event, taskId, lineIndex) {
 
     const tTitle = task.title || task.Title;
     const tStatus = task.isCompleted !== undefined ? task.isCompleted : task.IsCompleted;
-    const tFav = task.isFavorite;
+    const tFav = task.isFavorite || task.IsFavorite;
     const tPriority = task.priority !== undefined ? task.priority : task.Priority;
     const tDate = task.dueDate || task.DueDate;
     const tEventId = task.googleCalendarEventId || task.GoogleCalendarEventId || null;
+    const tMsEventId = task.microsoftCalendarEventId || task.MicrosoftCalendarEventId || null;
 
     try {
         await fetch(`${apiUrl}/Tasks/${taskId}`, {
             method: "PUT",
             headers: getHeaders(),
             body: JSON.stringify({
-                Id: taskId, Title: tTitle, Description: newDesc, IsCompleted: tStatus, isFavorite: tFav, Priority: tPriority, DueDate: tDate, GoogleCalendarEventId: tEventId
+                Id: taskId, Title: tTitle, Description: newDesc, IsCompleted: tStatus, isFavorite: tFav, Priority: tPriority, DueDate: tDate, GoogleCalendarEventId: tEventId, MicrosoftCalendarEventId: tMsEventId
             })
         });
         getTasks();
@@ -472,7 +485,7 @@ async function toggleSubtask(event, taskId, lineIndex) {
 }
 
 function renderTasks(tasks) {
-    globalTasks = tasks;
+    globalTasks = tasks || [];
     const list = document.getElementById("taskList");
     if (!list) return;
     list.innerHTML = "";
@@ -480,19 +493,19 @@ function renderTasks(tasks) {
     const searchVal = document.getElementById("searchInput")?.value || "";
     const statusVal = document.getElementById("statusFilter")?.value || "all";
     const priorityVal = document.getElementById("priorityFilter")?.value || "";
-    const pageTitle = document.getElementById('pageTitle').textContent;
+    const pageTitle = document.getElementById('pageTitle') ? document.getElementById('pageTitle').textContent : "Tüm Görevler";
     const canDrag = pageTitle === "Tüm Görevler" && searchVal === "" && statusVal === "all" && priorityVal === "";
 
-    if (tasks.length === 0) {
+    if (globalTasks.length === 0) {
         list.innerHTML = '<div class="text-center text-slate-500 py-10">Görev bulunamadı.</div>';
-        updateSidebarStats(tasks);
-        renderCalendar(tasks);
+        updateSidebarStats(globalTasks);
+        renderCalendar(globalTasks);
         return;
     }
 
     const now = new Date();
 
-    tasks.forEach(task => {
+    globalTasks.forEach(task => {
         const tId = task.id || task.Id;
         const tTitle = task.title || task.Title;
         let tDesc = task.description || task.Description || "";
@@ -501,8 +514,8 @@ function renderTasks(tasks) {
         const tPriority = task.priority !== undefined ? task.priority : task.Priority;
         const tDate = task.dueDate || task.DueDate;
         const tIsCompleted = task.isCompleted !== undefined ? task.isCompleted : task.IsCompleted;
-        const tIsFavorite = task.isFavorite;
-        const tIsDeleted = task.isDeleted;
+        const tIsFavorite = task.isFavorite || task.IsFavorite || false;
+        const tIsDeleted = task.isDeleted || task.IsDeleted || false;
 
         const tAssignees = task.assignees || task.Assignees || task.assign || task.Assign || [];
 
@@ -627,8 +640,8 @@ function renderTasks(tasks) {
         list.appendChild(li);
     });
     if (canDrag) initDragAndDrop();
-    updateSidebarStats(tasks);
-    renderCalendar(tasks);
+    updateSidebarStats(globalTasks);
+    renderCalendar(globalTasks);
 }
 
 async function toggleFavorite(id) { await fetch(`${apiUrl}/Tasks/favorites/${id}`, { method: "PUT", headers: getHeaders() }); getTasks(); }
@@ -640,6 +653,7 @@ let editingId = null;
 let editingStatus = false;
 let editingFavorite = false;
 let editingEventId = null;
+let editingMsEventId = null;
 
 async function saveTask() {
     const titleInput = document.getElementById("taskTitle");
@@ -666,7 +680,8 @@ async function saveTask() {
         DueDate: finalDueDate,
         IsCompleted: isEditing ? editingStatus : false,
         isFavorite: isEditing ? editingFavorite : false,
-        GoogleCalendarEventId: isEditing ? editingEventId : null
+        GoogleCalendarEventId: isEditing ? editingEventId : null,
+        MicrosoftCalendarEventId: isEditing ? editingMsEventId : null
     };
 
     let url = isEditing ? `${apiUrl}/Tasks/${editingId}` : `${apiUrl}/Tasks`;
@@ -697,12 +712,13 @@ async function saveTask() {
 async function toggleStatus(id, title, desc, status, isFav, priority, dueDate) {
     const task = globalTasks.find(t => (t.id || t.Id) === id);
     const eventId = task ? (task.googleCalendarEventId || task.GoogleCalendarEventId) : null;
+    const msEventId = task ? (task.microsoftCalendarEventId || task.MicrosoftCalendarEventId) : null;
 
     await fetch(`${apiUrl}/Tasks/${id}`, {
         method: "PUT",
         headers: getHeaders(),
         body: JSON.stringify({
-            Id: id, Title: title, Description: desc, IsCompleted: status, isFavorite: isFav, Priority: priority, DueDate: dueDate && dueDate !== "null" ? dueDate : null, GoogleCalendarEventId: eventId
+            Id: id, Title: title, Description: desc, IsCompleted: status, isFavorite: isFav, Priority: priority, DueDate: dueDate && dueDate !== "null" ? dueDate : null, GoogleCalendarEventId: eventId, MicrosoftCalendarEventId: msEventId
         })
     });
     getTasks();
@@ -712,6 +728,7 @@ async function toggleStatus(id, title, desc, status, isFav, priority, dueDate) {
 function startEditMode(id, title, desc, status, isFav, priority, dueDate) {
     const task = globalTasks.find(t => (t.id || t.Id) == id);
     editingEventId = task ? (task.googleCalendarEventId || task.GoogleCalendarEventId) : null;
+    editingMsEventId = task ? (task.microsoftCalendarEventId || task.MicrosoftCalendarEventId) : null;
 
     isEditing = true;
     editingId = id;
@@ -737,6 +754,7 @@ function resetForm() {
     isEditing = false;
     editingId = null;
     editingEventId = null;
+    editingMsEventId = null;
     document.getElementById("taskTitle").value = "";
     document.getElementById("taskDesc").value = "";
     document.getElementById("taskPriority").value = "2";
@@ -775,10 +793,10 @@ function updateSidebarStats(tasks) {
     const textEl = document.getElementById('successRateText');
     const barEl = document.getElementById('successRateBar');
     if (!textEl || !barEl) return;
-    const activeTasks = tasks.filter(t => !t.isDeleted);
+    const activeTasks = tasks.filter(t => !(t.isDeleted || t.IsDeleted));
     const total = activeTasks.length;
     if (total === 0) { textEl.innerText = "0%"; barEl.style.width = "0%"; return; }
-    const completed = activeTasks.filter(t => t.isCompleted).length;
+    const completed = activeTasks.filter(t => t.isCompleted || t.IsCompleted).length;
     const rate = Math.round((completed / total) * 100);
     textEl.innerText = `%${rate}`;
     barEl.style.width = `${rate}%`;
@@ -806,7 +824,8 @@ function renderCalendar(tasks) {
     const taskCounts = {};
     tasks.forEach(t => {
         const dateStr = t.dueDate || t.DueDate;
-        if (dateStr && !t.isDeleted) {
+        const isDel = t.isDeleted || t.IsDeleted;
+        if (dateStr && !isDel) {
             const d = new Date(dateStr);
             if (d.getFullYear() === year && d.getMonth() === month) {
                 const day = d.getDate();
@@ -867,7 +886,8 @@ function openDailyModal(year, month, day) {
     content.innerHTML = '';
 
     const dayTasks = globalTasks.filter(t => {
-        if (t.isDeleted) return false;
+        const isDel = t.isDeleted || t.IsDeleted;
+        if (isDel) return false;
         const dateStr = t.dueDate || t.DueDate;
         if (!dateStr) return false;
         const d = new Date(dateStr);

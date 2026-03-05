@@ -19,11 +19,14 @@ namespace TaskManagerApi.Controllers
     {
         private readonly AppDbContext _dbContext;
         private readonly GoogleCalendarService _calendarService;
+        private readonly MicrosoftCalendarService _microsoftCalendarService;
 
-        public TasksController(AppDbContext dbContext, GoogleCalendarService calendarService)
+        public TasksController(AppDbContext dbContext, GoogleCalendarService calendarService,
+            MicrosoftCalendarService microsoftCalendarService)
         {
             _dbContext = dbContext;
             _calendarService = calendarService;
+            _microsoftCalendarService = microsoftCalendarService;
         }
 
         private string GetUserIdFromHeader()
@@ -65,6 +68,7 @@ namespace TaskManagerApi.Controllers
                 IsDeleted = t.isDeleted,
                 TokenId = t.TokenId,
                 GoogleCalendarEventId = t.GoogleCalendarEventId,
+                MicrosoftCalendarEventId = t.MicrosoftCalendarEventId,
                 Assign = t.Assign.Select(a => new
                 {
                     UserId = a.UserId,
@@ -92,7 +96,12 @@ namespace TaskManagerApi.Controllers
         public async Task<IActionResult> ToggleFavorite(int id)
         {
             var userId = GetUserIdFromHeader();
-            var task = await _dbContext.TaskItems.FirstOrDefaultAsync(t => t.Id == id && t.TokenId == userId);
+            int currentUserId = int.Parse(userId);
+
+            var task = await _dbContext.TaskItems
+                .Include(t => t.Assign)
+                .FirstOrDefaultAsync(t => t.Id == id && (t.TokenId == userId 
+                || t.Assign.Any(a => a.UserId == currentUserId)));
 
             if (task == null) return BadRequest();
 
@@ -106,7 +115,12 @@ namespace TaskManagerApi.Controllers
         public async Task<IActionResult> ChangeDeletedTaskStatus(int id)
         {
             var userId = GetUserIdFromHeader();
-            var task = await _dbContext.TaskItems.FirstOrDefaultAsync(t => t.Id == id && t.TokenId == userId);
+            int currentUserId = int.Parse(userId);
+
+            var task = await _dbContext.TaskItems
+                .Include(t => t.Assign)
+                .FirstOrDefaultAsync(t => t.Id == id && (t.TokenId == userId 
+                || t.Assign.Any(a => a.UserId == currentUserId)));
 
             if (task == null) return BadRequest();
 
@@ -142,20 +156,30 @@ namespace TaskManagerApi.Controllers
 
             try
             {
-                if (task.DueDate.HasValue && user != null &&
-                    user.Email.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase))
+                if (task.DueDate.HasValue && user != null && !string.IsNullOrEmpty(user.Email))
                 {
-                    try
+                    if (user.Email.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase))
                     {
-                        var userEmail = user.Email;
-                        string safeDescription = task.Description ?? "";
-                        string eventId = await _calendarService.AddTaskToUserCalendarAsync
-                            (userEmail, task.Title, safeDescription, task.DueDate.Value);
+                        try
+                        {
+                            string eventId = await _calendarService.AddTaskToUserCalendarAsync(user.Email,
+                                task.Title, task.Description ?? "", task.DueDate.Value);
 
-                        task.GoogleCalendarEventId = eventId;
+                            task.GoogleCalendarEventId = eventId;
+                        }
+                        catch { }
                     }
-                    catch
+                    else if (user.Email.EndsWith("@hotmail.com", StringComparison.OrdinalIgnoreCase)
+                        || user.Email.EndsWith("@outlook.com", StringComparison.OrdinalIgnoreCase))
                     {
+                        try
+                        {
+                            string eventId = await _microsoftCalendarService.AddTaskToUserCalendarAsync
+                                (user.Email, task.Title, task.Description ?? "", task.DueDate.Value);
+
+                            task.MicrosoftCalendarEventId = eventId;
+                        }
+                        catch { }
                     }
                 }
 
@@ -165,7 +189,7 @@ namespace TaskManagerApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, $"Error creating task: {ex.Message}");
             }
         }
 
@@ -173,8 +197,12 @@ namespace TaskManagerApi.Controllers
         public async Task<IActionResult> UpdateTask(int id, [FromBody] TaskItem updatedTask)
         {
             var userIdString = GetUserIdFromHeader();
-            var existingTask = await _dbContext.TaskItems.FirstOrDefaultAsync(t => t.Id == id && 
-                t.TokenId == userIdString);
+            int currentUserId = int.Parse(userIdString);
+
+            var existingTask = await _dbContext.TaskItems
+                .Include(t => t.Assign)
+                .FirstOrDefaultAsync(t => t.Id == id && (t.TokenId == userIdString 
+                || t.Assign.Any(a => a.UserId == currentUserId)));
 
             if (existingTask == null) return NotFound();
 
@@ -185,48 +213,86 @@ namespace TaskManagerApi.Controllers
             existingTask.Priority = updatedTask.Priority;
             existingTask.DueDate = updatedTask.DueDate;
 
-            var user = await _dbContext.Users.FindAsync(int.Parse(userIdString));
+            var creatorUser = await _dbContext.Users.FindAsync(int.Parse(existingTask.TokenId));
 
-            if (user != null && !string.IsNullOrEmpty(user.Email) && user.Email.EndsWith("@gmail.com",
-                StringComparison.OrdinalIgnoreCase))
+            if (creatorUser != null && !string.IsNullOrEmpty(creatorUser.Email))
             {
-                if (!string.IsNullOrEmpty(existingTask.GoogleCalendarEventId))
+                if (creatorUser.Email.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (existingTask.DueDate.HasValue)
+                    if (!string.IsNullOrEmpty(existingTask.GoogleCalendarEventId))
                     {
-                        try
+                        if (existingTask.DueDate.HasValue)
                         {
-                            await _calendarService.UpdateTaskInUserCalendarAsync(user.Email, existingTask.GoogleCalendarEventId, 
-                                existingTask.Title, existingTask.Description ?? "", existingTask.DueDate.Value);
+                            try
+                            {
+                                await _calendarService.UpdateTaskInUserCalendarAsync(creatorUser.Email,
+                                    existingTask.GoogleCalendarEventId, existingTask.Title,
+                                    existingTask.Description ?? "", existingTask.DueDate.Value);
+                            }
+                            catch { }
                         }
-                        catch
+                        else
                         {
+                            try
+                            {
+                                await _calendarService.DeleteTaskFromUserCalendarAsync(creatorUser.Email,
+                                    existingTask.GoogleCalendarEventId);
+                            }
+                            catch { }
+
+                            existingTask.GoogleCalendarEventId = null;
                         }
                     }
-                    else
+                    else if (existingTask.DueDate.HasValue)
                     {
                         try
                         {
-                            await _calendarService.DeleteTaskFromUserCalendarAsync(user.Email,
-                                existingTask.GoogleCalendarEventId);
+                            string eventId = await _calendarService.AddTaskToUserCalendarAsync(creatorUser.Email,
+                                existingTask.Title, existingTask.Description ?? "", existingTask.DueDate.Value);
+
+                            existingTask.GoogleCalendarEventId = eventId;
                         }
-                        catch
-                        {
-                        }
-                        existingTask.GoogleCalendarEventId = null;
+                        catch { }
                     }
                 }
-                else if (existingTask.DueDate.HasValue)
+                else if (creatorUser.Email.EndsWith("@hotmail.com", StringComparison.OrdinalIgnoreCase) 
+                    || creatorUser.Email.EndsWith("@outlook.com", StringComparison.OrdinalIgnoreCase))
                 {
-                    try
+                    if (!string.IsNullOrEmpty(existingTask.MicrosoftCalendarEventId))
                     {
-                        string eventId = await _calendarService.AddTaskToUserCalendarAsync(user.Email,
-                            existingTask.Title, existingTask.Description ?? "", existingTask.DueDate.Value);
+                        if (existingTask.DueDate.HasValue)
+                        {
+                            try
+                            {
+                                await _microsoftCalendarService.UpdateTaskInUserCalendarAsync(creatorUser.Email,
+                                    existingTask.MicrosoftCalendarEventId, existingTask.Title,
+                                    existingTask.Description ?? "", existingTask.DueDate.Value);
+                            }
+                            catch { }
+                        }
+                        else
+                        {
+                            try
+                            {
+                                await _microsoftCalendarService.DeleteTaskFromUserCalendarAsync(creatorUser.Email,
+                                    existingTask.MicrosoftCalendarEventId);
+                            }
+                            catch { }
 
-                        existingTask.GoogleCalendarEventId = eventId;
+                            existingTask.MicrosoftCalendarEventId = null;
+                        }
                     }
-                    catch
+                    else if (existingTask.DueDate.HasValue)
                     {
+                        try
+                        {
+                            string eventId = await _microsoftCalendarService.AddTaskToUserCalendarAsync(
+                                creatorUser.Email,existingTask.Title, existingTask.Description ?? "", 
+                                existingTask.DueDate.Value);
+
+                            existingTask.MicrosoftCalendarEventId = eventId;
+                        }
+                        catch { }
                     }
                 }
             }
@@ -239,20 +305,35 @@ namespace TaskManagerApi.Controllers
         public async Task<IActionResult> DeleteTask(int id)
         {
             var userIdString = GetUserIdFromHeader();
+
             var task = await _dbContext.TaskItems.FirstOrDefaultAsync(t => t.Id == id && t.TokenId == userIdString);
 
-            if (task == null) return NotFound();
+            if (task == null)
+                return StatusCode(StatusCodes.Status403Forbidden, "Sadece görevi oluşturan kişi kalıcı olarak silebilir.");
 
             var user = await _dbContext.Users.FindAsync(int.Parse(userIdString));
 
-            if (user != null && !string.IsNullOrEmpty(user.Email) && !string.IsNullOrEmpty(task.GoogleCalendarEventId))
+            if (user != null && !string.IsNullOrEmpty(user.Email))
             {
-                try
+                if (user.Email.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase) 
+                    && !string.IsNullOrEmpty(task.GoogleCalendarEventId))
                 {
-                    await _calendarService.DeleteTaskFromUserCalendarAsync(user.Email, task.GoogleCalendarEventId);
+                    try
+                    {
+                        await _calendarService.DeleteTaskFromUserCalendarAsync(user.Email, task.GoogleCalendarEventId);
+                    }
+                    catch { }
                 }
-                catch
+                else if ((user.Email.EndsWith("@hotmail.com", StringComparison.OrdinalIgnoreCase) 
+                    || user.Email.EndsWith("@outlook.com", StringComparison.OrdinalIgnoreCase)) 
+                    && !string.IsNullOrEmpty(task.MicrosoftCalendarEventId))
                 {
+                    try
+                    {
+                        await _microsoftCalendarService.DeleteTaskFromUserCalendarAsync(user.Email, 
+                            task.MicrosoftCalendarEventId);
+                    }
+                    catch { }
                 }
             }
 
@@ -271,7 +352,8 @@ namespace TaskManagerApi.Controllers
             var task = await _dbContext.TaskItems.FindAsync(taskId);
             if (task == null) return NotFound("Görev bulunamadı.");
 
-            if (task.TokenId != currentUserIdStr) return Forbid("Sadece kendi görevlerinize kişi atayabilirsiniz.");
+            if (task.TokenId != currentUserIdStr) return StatusCode(StatusCodes.Status403Forbidden, 
+                "Sadece kendi görevlerinize kişi atayabilirsiniz.");
 
             var targetUser = await _dbContext.Users.FindAsync(userId);
             if (targetUser == null) return NotFound("Kullanıcı bulunamadı.");
@@ -318,7 +400,7 @@ namespace TaskManagerApi.Controllers
             if (task == null) return NotFound("Görev bulunamadı.");
 
             if (task.TokenId != currentUserIdStr && currentUserId != userId)
-                return Forbid("Bu işlem için yetkiniz yok.");
+                return StatusCode(StatusCodes.Status403Forbidden, "Bu işlem için yetkiniz yok.");
 
             var assign = await _dbContext.TaskAssign.FirstOrDefaultAsync(a => a.TaskId == taskId && a.UserId == userId);
             if (assign == null) return BadRequest("Kullanıcı bu görevde bulunamadı.");

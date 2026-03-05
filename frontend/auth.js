@@ -40,6 +40,8 @@ function toggleTheme() {
         }
         localStorage.setItem('theme', 'dark');
     }
+
+    renderGoogleButton();
 }
 
 async function registerUser() {
@@ -80,7 +82,6 @@ async function registerUser() {
             alert("❌ Hata: " + errorText);
         }
     } catch (error) {
-        console.error("Bağlantı Hatası:", error);
         alert("Sunucuya bağlanılamadı!");
     }
 }
@@ -115,7 +116,6 @@ async function verifyCode() {
             alert("❌ Hata: " + errorText);
         }
     } catch (error) {
-        console.error("Bağlantı Hatası:", error);
         alert("Sunucuya bağlanılamadı!");
     }
 }
@@ -152,7 +152,6 @@ async function loginUser() {
                 alert("Giriş Başarılı! Yönlendiriliyorsunuz...");
                 window.location.href = "index.html";
             } else {
-                console.error("Token bulunamadı. Yanıtı kontrol et:", data);
                 alert("Sistemsel bir hata oluştu: Token alınamadı.");
             }
         } else {
@@ -160,7 +159,95 @@ async function loginUser() {
             alert("❌ Giriş Başarısız: " + errorMsg);
         }
     } catch (error) {
-        console.error("Sunucu Hatası:", error);
         alert("Sunucuya bağlanılamadı!");
     }
+}
+
+window.onload = function () {
+    if (document.getElementById("googleButtonContainer")) {
+        const isRegisterPage = window.location.href.includes('register');
+
+        google.accounts.id.initialize({
+            client_id: "787940789409-k70mn4qf4fatqgsjnlr3h7fn8dj7bklt.apps.googleusercontent.com",
+            callback: isRegisterPage ? handleGoogleRegister : handleGoogleLogin
+        });
+
+        renderGoogleButton();
+
+        window.addEventListener('resize', () => {
+            clearTimeout(window.resizeTimer);
+            window.resizeTimer = setTimeout(renderGoogleButton, 200);
+        });
+    }
+};
+
+function renderGoogleButton() {
+    const container = document.getElementById("googleButtonContainer");
+    if (container && window.google) {
+        container.innerHTML = "";
+
+        const isDarkMode = document.documentElement.classList.contains('dark');
+        const btnWidth = container.offsetWidth || 340;
+
+        google.accounts.id.renderButton(
+            container,
+            { theme: isDarkMode ? "filled_black" : "outline", size: "large", width: btnWidth, text: "continue_with" }
+        );
+    }
+}
+
+async function handleGoogleLogin(response) {
+    try {
+        const res = await fetch(`${apiUrl}/Auth/google-login`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ Token: response.credential })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            localStorage.setItem("jwtToken", data.token);
+            localStorage.setItem("username", data.username);
+            window.location.href = "index.html";
+        } else {
+            const err = await res.text();
+            alert("❌ " + err);
+        }
+    } catch (error) {
+        alert("Bağlantı hatası oluştu.");
+    }
+}
+
+async function handleGoogleRegister(response) {
+    try {
+        const res = await fetch(`${apiUrl}/Auth/google-register`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ Token: response.credential })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            localStorage.setItem("jwtToken", data.token);
+            localStorage.setItem("username", data.username);
+            window.location.href = "index.html";
+        } else {
+            const err = await res.text();
+            alert("❌ " + err);
+        }
+    } catch (error) {
+        alert("Bağlantı hatası oluştu.");
+    }
+}
+
+function loginWithMicrosoft() {
+    window.location.href = `${apiUrl}/Auth/microsoft-login`;
+}
+
+function registerWithMicrosoft() {
+    window.location.href = `${apiUrl}/Auth/microsoft-register`;
 }
