@@ -80,7 +80,7 @@ Uygulamadaki Google ve Microsoft ile giriş özelliklerinin çalışabilmesi iç
 "ClientSecret": "KOPYALADIGINIZ_SECRET_VALUE"
 ```
 
-### 4. Projeyi Çalıştırma
+### 5. Projeyi Çalıştırma
 ##### (Backend):
 Veritabanı oluştuktan sonra, terminalde API klasörünün içindeyken projeyi başlatın:
 
@@ -92,10 +92,10 @@ API varsayılan olarak https://localhost:7133 portunda ayağa kalkacaktır.
 ##### (Frontend):
 Ön uç için herhangi bir sunucu kurmanıza (Node.js, npm vb.) gerek yoktur. Proje klasöründeki login.html veya index.html dosyasını doğrudan tarayıcınızda açarak sistemi hemen kullanmaya başlayabilirsiniz.
 
-### 5. Google Takvim Entegrasyonu (İsteğe Bağlı)
+### 6. Google Takvim Entegrasyonu (İsteğe Bağlı)
 Projedeki görevlerin Google Takviminize otomatik eklenmesi için bir Service Account (Bot) altyapısı kullanılmıştır. Bu özelliği aktif etmek için şu adımları izlemelisiniz:
 
-#### 1. API ve Service Account Kurulumu:
+#### a. API ve Service Account Kurulumu:
 
 * Google Cloud Console'da yeni bir proje oluşturun ve Google Calendar API'yi aktifleştirin.
 
@@ -105,7 +105,7 @@ Projedeki görevlerin Google Takviminize otomatik eklenmesi için bir Service Ac
 
 * İndirdiğiniz dosyanın adını google-credentials.json olarak değiştirin ve backend (TaskManagerApi) klasörünün ana dizinine (Program.cs ile aynı yere) kopyalayın.
 
-#### 2. Takvim İzni Verme (Kritik Adım):
+#### b. Takvim İzni Verme (Kritik Adım):
 Uygulamanın takviminize kayıt atabilmesi için kişisel takviminizi bota açmanız gerekir.
 
 * google-credentials.json dosyasını açın ve içindeki client_email değerini (botun e-posta adresini) kopyalayın.
