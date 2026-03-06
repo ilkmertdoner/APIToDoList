@@ -1,15 +1,15 @@
-﻿using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using System.Text.Json;
-using Google.Apis.Auth;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using TaskManagerApi.Data;
-using TaskManagerApi.Dto;
 using TaskManagerApi.Models;
+using Google.Apis.Auth;
+using System.Text.Json;
+using TaskManagerApi.Dto;
+using Microsoft.AspNetCore.Authorization;
 
 namespace TaskManagerApi.Controllers
 {
@@ -36,6 +36,12 @@ namespace TaskManagerApi.Controllers
 
             if (await _dbContext.Users.AnyAsync(u => u.Username == request.Username))
                 return BadRequest("Bu kullanıcı adı zaten kullanılıyor.");
+
+            var oldTokens = _dbContext.EmailTokens.Where(t => t.Email == request.Email);
+            if (oldTokens.Any())
+            {
+                _dbContext.EmailTokens.RemoveRange(oldTokens);
+            }
 
             var user = new User
             {
@@ -76,9 +82,7 @@ namespace TaskManagerApi.Controllers
                 {
                     From = new System.Net.Mail.MailAddress(senderEmail, "TaskManager"),
                     Subject = "Hesap Doğrulama Kodu",
-                    Body = $"Hoş geldiniz {request.Username}," +
-                    $"\n\nHesabınızı aktifleştirmek için doğrulama kodunuz:\n\n{verificationCode}" +
-                    $"\n\nBu kod 15 dakika boyunca geçerlidir.",
+                    Body = $"Hoş geldiniz {request.Username},\n\nHesabınızı aktifleştirmek için doğrulama kodunuz:\n\n{verificationCode}\n\nBu kod 15 dakika boyunca geçerlidir.",
                     IsBodyHtml = false,
                 };
 
@@ -90,8 +94,7 @@ namespace TaskManagerApi.Controllers
             {
                 _dbContext.EmailTokens.Remove(emailToken);
                 await _dbContext.SaveChangesAsync();
-                return BadRequest("E-posta gönderilirken bir hata oluştu. Lütfen e-posta ayarlarınızı " +
-                    "veya adresinizi kontrol edin.");
+                return BadRequest("E-posta gönderilirken bir hata oluştu.");
             }
 
             return Ok(new { message = "Kayıt başarılı. Lütfen e-postanızı doğrulayın." });
@@ -100,8 +103,10 @@ namespace TaskManagerApi.Controllers
         [HttpPost("verify")]
         public async Task<IActionResult> Verify([FromBody] EmailToken request)
         {
-            var tokenRecord = await _dbContext.EmailTokens.FirstOrDefaultAsync
-                (t => t.Email == request.Email && t.Code == request.Code);
+            var cleanEmail = request.Email?.Trim();
+            var cleanCode = request.Code?.Trim();
+
+            var tokenRecord = await _dbContext.EmailTokens.FirstOrDefaultAsync(t => t.Email == cleanEmail && t.Code == cleanCode);
 
             if (tokenRecord == null)
                 return BadRequest("Hatalı doğrulama kodu.");
@@ -109,13 +114,7 @@ namespace TaskManagerApi.Controllers
             if (tokenRecord.ExpirationDate < DateTime.Now)
                 return BadRequest("Doğrulama kodunun süresi dolmuş.");
 
-            var user = new User
-            {
-                Username = tokenRecord.Username,
-                Email = tokenRecord.Email,
-                Password = tokenRecord.Password
-            };
-
+            var user = new User { Username = tokenRecord.Username, Email = tokenRecord.Email, Password = tokenRecord.Password };
             _dbContext.Users.Add(user);
             _dbContext.EmailTokens.Remove(tokenRecord);
             await _dbContext.SaveChangesAsync();
@@ -139,24 +138,18 @@ namespace TaskManagerApi.Controllers
         {
             try
             {
-                var settings = new GoogleJsonWebSignature.ValidationSettings
-                {
-                    Audience = new[] { "787940789409-k70mn4qf4fatqgsjnlr3h7fn8dj7bklt.apps.googleusercontent.com" }
-                };
+                var settings = new GoogleJsonWebSignature.ValidationSettings { Audience = new[]
+                { "787940789409-k70mn4qf4fatqgsjnlr3h7fn8dj7bklt.apps.googleusercontent.com" } };
 
                 var payload = await GoogleJsonWebSignature.ValidateAsync(request.Token, settings);
                 var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
 
-                if (user == null)
-                    return BadRequest("Bu Google hesabı sistemimizde kayıtlı değil. Lütfen önce kayıt olun.");
+                if (user == null) return BadRequest("Bu Google hesabı sistemimizde kayıtlı değil.");
 
                 var token = GenerateJwtToken(user);
                 return Ok(new { token = token, username = user.Username });
             }
-            catch
-            {
-                return BadRequest("Google girişi doğrulanamadı.");
-            }
+            catch { return BadRequest("Google girişi doğrulanamadı."); }
         }
 
         [HttpPost("google-register")]
@@ -166,14 +159,14 @@ namespace TaskManagerApi.Controllers
             {
                 var settings = new GoogleJsonWebSignature.ValidationSettings
                 {
-                    Audience = new[] { "787940789409-k70mn4qf4fatqgsjnlr3h7fn8dj7bklt.apps.googleusercontent.com" }
+                    Audience = new[]
+                { "787940789409-k70mn4qf4fatqgsjnlr3h7fn8dj7bklt.apps.googleusercontent.com" }
                 };
 
                 var payload = await GoogleJsonWebSignature.ValidateAsync(request.Token, settings);
                 var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
 
-                if (user != null)
-                    return BadRequest("Bu e-posta adresi zaten kayıtlı. Lütfen giriş yapın.");
+                if (user != null) return BadRequest("Bu hesap zaten kayıtlı.");
 
                 user = new User
                 {
@@ -185,13 +178,9 @@ namespace TaskManagerApi.Controllers
                 _dbContext.Users.Add(user);
                 await _dbContext.SaveChangesAsync();
 
-                var token = GenerateJwtToken(user);
-                return Ok(new { token = token, username = user.Username });
+                return Ok(new { message = "Google hesabı ile kayıt başarılı." });
             }
-            catch
-            {
-                return BadRequest("Google kaydı doğrulanamadı.");
-            }
+            catch { return BadRequest("Google kaydı doğrulanamadı."); }
         }
 
         [HttpGet("microsoft-login")]
@@ -231,9 +220,10 @@ namespace TaskManagerApi.Controllers
 
             var tokenResponse = await _httpClient.PostAsync($"https://login.microsoftonline.com/{tenantId}" +
                 $"/oauth2/v2.0/token", new FormUrlEncodedContent(new Dictionary<string, string>
-                { { "client_id", clientId }, { "scope", "User.Read openid email profile" }, { "code", code },
-                    { "redirect_uri", redirectUri }, { "grant_type", "authorization_code" },
-                    { "client_secret", clientSecret } }));
+                { { "client_id", clientId }, { "scope", "User.Read openid email profile" },
+                        { "code", code }, { "redirect_uri", redirectUri },
+                        { "grant_type", "authorization_code" },
+                        { "client_secret", clientSecret } }));
 
             if (!tokenResponse.IsSuccessStatusCode) return BadRequest("Microsoft token alınamadı.");
 
@@ -266,6 +256,8 @@ namespace TaskManagerApi.Controllers
 
                 _dbContext.Users.Add(user);
                 await _dbContext.SaveChangesAsync();
+
+                return Redirect("http://127.0.0.1:5500/login.html?success=ms_registered");
             }
 
             var jwt = GenerateJwtToken(user);
@@ -298,10 +290,10 @@ namespace TaskManagerApi.Controllers
 
             if (tasks.Any()) _dbContext.TaskItems.RemoveRange(tasks);
 
-            var friends = await _dbContext.FriendSystem.Where(f=>f.ReceiverId == userId || f.RequesterId == userId)
+            var friends = await _dbContext.FriendSystem.Where(f => f.ReceiverId == userId || f.RequesterId == userId)
                 .ToListAsync();
 
-            if(friends.Any()) _dbContext.FriendSystem.RemoveRange(friends);
+            if (friends.Any()) _dbContext.FriendSystem.RemoveRange(friends);
 
             _dbContext.Users.Remove(user);
             await _dbContext.SaveChangesAsync();
