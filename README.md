@@ -77,7 +77,8 @@ Uygulamadaki Google ve Microsoft ile giriş özelliklerinin çalışabilmesi iç
 ```json
 "TenantId": "KOPYALADIGINIZ_TENANT_ID",
 "ClientId": "KOPYALADIGINIZ_CLIENT_ID",
-"ClientSecret": "KOPYALADIGINIZ_SECRET_VALUE"```
+"ClientSecret": "KOPYALADIGINIZ_SECRET_VALUE"
+```
 
 ### 4. Projeyi Çalıştırma
 ##### (Backend):
@@ -129,6 +130,5 @@ Artık uygulamadan bitiş tarihi olan bir görev eklediğinizde, bu görev arka 
 * Dinamik Takvim: Ay geçişli mini takvim ve gün bazlı açılır görev listesi (Modal).
 
 * Alt Görevler: Açıklama alanında -  ile başlayan metinlerin otomatik olarak tıklanabilir kutucuklara (checkbox) dönüşmesi.
-
 
 * Dark/Light Mode: Tailwind CSS ile entegre karanlık ve aydınlık tema desteği.
