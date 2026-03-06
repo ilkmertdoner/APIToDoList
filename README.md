@@ -51,6 +51,34 @@ update-database
 ```
 *Not: Bu komutların çalışması için bilgisayarınızda Entity Framework Core CLI araçlarının yüklü olması gerekmektedir. Yüklü değilse önce dotnet tool install --global dotnet-ef komutunu çalıştırın.*
 
+### 4. Sosyal Giriş API Anahtarlarının Alınması (Google & Microsoft)
+
+Uygulamadaki Google ve Microsoft ile giriş özelliklerinin çalışabilmesi için kendi geliştirici hesaplarınızdan API anahtarları almanız ve projeye entegre etmeniz gerekmektedir.
+
+#### 🔵 Google Kimlik Bilgilerini Alma (Frontend İçin)
+1. **Google Cloud Console**'a (console.cloud.google.com) gidin ve yeni bir proje oluşturun.
+2. Sol menüden **APIs & Services > Credentials (Kimlik Bilgileri)** sayfasına girin.
+3. **Create Credentials > OAuth client ID** butonuna tıklayın.
+4. Application type (Uygulama türü) olarak **Web application** seçin.
+5. **Authorized JavaScript origins** (Yetkili JavaScript kökleri) alanına, frontend uygulamanızın çalıştığı adresi ekleyin (Örn: `http://127.0.0.1:5500`).
+6. Oluşturduğunuz **Client ID** değerini kopyalayın.
+7. Frontend klasöründeki `auth.js` dosyasını açın ve `google.accounts.id.initialize` içindeki `client_id` alanına bu değeri yapıştırın.
+
+*Not: google-credentials.json dosyasını indirip, proje içine atmanız gerekmektedir.*
+
+#### 🔵 Microsoft Kimlik Bilgilerini Alma (Backend İçin)
+1. **Microsoft Azure Portal**'a (portal.azure.com) gidin ve **Microsoft Entra ID** (eski adıyla Azure AD) hizmetini açın.
+2. Sol menüden **App registrations (Uygulama kayıtları)** sekmesine girip **New registration (Yeni kayıt)** butonuna tıklayın.
+3. Uygulamanıza isim verin. **Redirect URI** bölümünde platform olarak **Web**'i seçin ve backend callback adresinizi girin (Örn: `https://localhost:7133/api/Auth/microsoft-callback`). Kaydedin.
+4. Karşınıza çıkan "Overview" (Genel Bakış) sayfasındaki **Application (client) ID** ve **Directory (tenant) ID** değerlerini kopyalayın.
+5. Sol menüden **Certificates & secrets (Sertifikalar ve gizli diziler)** bölümüne girin. **New client secret** oluşturun ve üretilen **Value (Değer)** kısmını kopyalayın (Bu değeri sadece bir kez görebilirsiniz).
+6. Kopyaladığınız bu 3 değeri backend projesindeki `appsettings.json` dosyasına aşağıdaki gibi ekleyin:
+
+```json
+"TenantId": "KOPYALADIGINIZ_TENANT_ID",
+"ClientId": "KOPYALADIGINIZ_CLIENT_ID",
+"ClientSecret": "KOPYALADIGINIZ_SECRET_VALUE"```
+
 ### 4. Projeyi Çalıştırma
 ##### (Backend):
 Veritabanı oluştuktan sonra, terminalde API klasörünün içindeyken projeyi başlatın:
