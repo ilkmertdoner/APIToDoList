@@ -106,7 +106,7 @@ Projedeki görevlerin Google Takviminize otomatik eklenmesi için bir Service Ac
 * İndirdiğiniz dosyanın adını google-credentials.json olarak değiştirin ve backend (TaskManagerApi) klasörünün ana dizinine (Program.cs ile aynı yere) kopyalayın.
 
 #### b. Takvim İzni Verme (Kritik Adım):
-Uygulamanın takviminize kayıt atabilmesi için kişisel takviminizi bota açmanız gerekir.
+Uygulamanın takviminize kayıt atabilmesi için kişisel takviminizi bota açmanız gerekir (Google veya Microsoft ile giriş yaparsanız otomatik erişim izni verilir).
 
 * google-credentials.json dosyasını açın ve içindeki client_email değerini (botun e-posta adresini) kopyalayın.
 

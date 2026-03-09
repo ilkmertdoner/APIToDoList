@@ -82,7 +82,10 @@ namespace TaskManagerApi.Controllers
                 {
                     From = new System.Net.Mail.MailAddress(senderEmail, "TaskManager"),
                     Subject = "Hesap Doğrulama Kodu",
-                    Body = $"Hoş geldiniz {request.Username},\n\nHesabınızı aktifleştirmek için doğrulama kodunuz:\n\n{verificationCode}\n\nBu kod 15 dakika boyunca geçerlidir.",
+                    Body = $"Hoş geldiniz {request.Username}," +
+                    $"\n\nHesabınızı aktifleştirmek için doğrulama kodunuz:" +
+                    $"\n\n{verificationCode}" +
+                    $"\n\nBu kod 15 dakika boyunca geçerlidir.",
                     IsBodyHtml = false,
                 };
 
@@ -106,7 +109,8 @@ namespace TaskManagerApi.Controllers
             var cleanEmail = request.Email?.Trim();
             var cleanCode = request.Code?.Trim();
 
-            var tokenRecord = await _dbContext.EmailTokens.FirstOrDefaultAsync(t => t.Email == cleanEmail && t.Code == cleanCode);
+            var tokenRecord = await _dbContext.EmailTokens.FirstOrDefaultAsync
+                (t => t.Email == cleanEmail && t.Code == cleanCode);
 
             if (tokenRecord == null)
                 return BadRequest("Hatalı doğrulama kodu.");
@@ -114,7 +118,13 @@ namespace TaskManagerApi.Controllers
             if (tokenRecord.ExpirationDate < DateTime.Now)
                 return BadRequest("Doğrulama kodunun süresi dolmuş.");
 
-            var user = new User { Username = tokenRecord.Username, Email = tokenRecord.Email, Password = tokenRecord.Password };
+            var user = new User 
+            { 
+                Username = tokenRecord.Username, 
+                Email = tokenRecord.Email, 
+                Password = tokenRecord.Password 
+            };
+
             _dbContext.Users.Add(user);
             _dbContext.EmailTokens.Remove(tokenRecord);
             await _dbContext.SaveChangesAsync();
@@ -128,6 +138,13 @@ namespace TaskManagerApi.Controllers
             var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
             if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.Password))
                 return BadRequest("Geçersiz kullanıcı adı veya şifre.");
+
+            var checkVerifications = _dbContext.EmailTokens.Where(x=>x.ExpirationDate < DateTime.Now 
+                && x.Username == request.Username).ToList();
+
+            if(checkVerifications.Any()) _dbContext.EmailTokens.RemoveRange(checkVerifications);
+
+            await _dbContext.SaveChangesAsync();
 
             var token = GenerateJwtToken(user);
             return Ok(new { token = token, username = user.Username });
@@ -312,12 +329,14 @@ namespace TaskManagerApi.Controllers
                 new Claim("Username", user.Username)
             };
 
-            var token = new JwtSecurityToken(
+            var token = new JwtSecurityToken
+            (
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
                 expires: DateTime.Now.AddHours(5.30),
-                signingCredentials: credentials);
+                signingCredentials: credentials
+            );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
