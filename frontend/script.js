@@ -553,7 +553,7 @@ async function toggleSubtask(event, taskId, lineIndex) {
     if (task.Description !== undefined) task.Description = newDesc;
 
     const tTitle = task.title || task.Title;
-    const tStatus = task.isCompleted !== undefined ? task.isCompleted : task.IsCompleted;
+    const tStatus = task.isCompleted === true || task.IsCompleted === true;
     const tFav = task.isFavorite === true || task.IsFavorite === true;
     const tPriority = task.priority !== undefined ? task.priority : task.Priority;
     const tDate = task.dueDate || task.DueDate;
@@ -604,15 +604,30 @@ function renderTasks(tasks) {
         let tDesc = task.description || task.Description || "";
         if (tDesc === "undefined" || tDesc === "null") tDesc = "";
 
+        const tIsCompleted = task.isCompleted === true || task.IsCompleted === true;
+        const tIsFavorite = task.isFavorite === true || task.IsFavorite === true;
+        const tIsDeleted = task.isDeleted === true || task.IsDeleted === true || isBinPage;
+
         const tPriority = task.priority !== undefined ? task.priority : task.Priority;
         const tDate = task.dueDate || task.DueDate;
-        const tIsCompleted = task.isCompleted !== undefined ? task.isCompleted : task.IsCompleted;
-        const tIsFavorite = task.isFavorite === true || task.IsFavorite === true;
 
-        const tIsDeleted = task.isDeleted === true || task.IsDeleted === true || isBinPage;
-        const tGroupId = task.groupId || task.GroupId || null;
+        let actualGroupId = task.groupId !== undefined ? task.groupId : (task.GroupId !== undefined ? task.GroupId : null);
+        if (!actualGroupId && currentGroupId) {
+            actualGroupId = currentGroupId;
+        }
+        const isGroupTask = actualGroupId !== null && actualGroupId !== "";
 
         const tAssignees = task.assignees || task.Assignees || task.assign || task.Assign || [];
+
+        let isAdminForTask = true;
+        if (isGroupTask) {
+            const foundGroup = myGroups.find(g => (g.groupId || g.GroupId) === actualGroupId);
+            if (foundGroup) {
+                isAdminForTask = foundGroup.isAdmin !== undefined ? foundGroup.isAdmin : foundGroup.IsAdmin;
+            } else {
+                isAdminForTask = currentGroupIsAdmin;
+            }
+        }
 
         let priorityBadge = "";
         if (tPriority === 1) priorityBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-600">Düşük</span>`;
@@ -620,14 +635,15 @@ function renderTasks(tasks) {
         else if (tPriority === 3) priorityBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-600">Yüksek</span>`;
 
         let groupBadge = "";
-        if (tGroupId && !currentGroupId) {
-            const foundGroup = myGroups.find(g => (g.groupId || g.GroupId) === tGroupId);
+        if (isGroupTask && !currentGroupId) {
+            const foundGroup = myGroups.find(g => (g.groupId || g.GroupId) === actualGroupId);
             const gName = foundGroup ? (foundGroup.name || foundGroup.Name) : "Grup";
             groupBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-600 flex items-center gap-1">📁 ${gName}</span>`;
         }
 
         let dateBadge = "";
         let borderClass = "border-slate-200 dark:border-slate-700";
+        let bgClass = "bg-white dark:bg-[#252525]";
 
         if (tDate) {
             const d = new Date(tDate);
@@ -653,16 +669,38 @@ function renderTasks(tasks) {
             dateBadge = `<span class="text-xs ${dateColorClass} flex items-center gap-1">${dateText}</span>`;
         }
 
-        let assigneeHtml = "";
-        if (!tGroupId && tAssignees.length > 0) {
-            assigneeHtml = `<div class="flex flex-wrap space-x-0.5">`;
-            tAssignees.forEach(a => {
-                const uId = a.id || a.Id || a.userId || a.UserId;
-                const name = a.username || a.Username || a.user?.username || a.User?.Username || a.user?.Username || a.User?.username || "A";
+        if (tIsCompleted) {
+            bgClass = "bg-emerald-50/90 dark:bg-emerald-900/20";
+            borderClass = "border-emerald-200 dark:border-emerald-800";
+        } else if (isGroupTask) {
+            bgClass = "bg-indigo-50/30 dark:bg-[#252530]";
+            if (borderClass === "border-slate-200 dark:border-slate-700") {
+                borderClass = "border-indigo-200 dark:border-indigo-800/50";
+            }
+        }
 
-                assigneeHtml += `<div onclick="event.stopPropagation(); removeUser(${tId}, ${uId}, '${name}')" title="@${name} - Çıkarmak için tıkla" class="cursor-pointer w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 border-2 border-white dark:border-[#252525] flex items-center justify-center text-[10px] font-bold text-blue-600 dark:text-blue-400 leading-none hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900 transition-colors shadow-sm">${name.charAt(0).toUpperCase()}</div>`;
-            });
-            assigneeHtml += `</div>`;
+        let assignSection = "";
+        if (!isGroupTask) {
+            let assigneeHtml = "";
+            if (tAssignees.length > 0) {
+                assigneeHtml = `<div class="flex flex-wrap space-x-0.5">`;
+                tAssignees.forEach(a => {
+                    const uId = a.id || a.Id || a.userId || a.UserId;
+                    const name = a.username || a.Username || a.user?.username || a.User?.Username || a.user?.Username || a.User?.username || "A";
+                    assigneeHtml += `<div onclick="event.stopPropagation(); removeUser(${tId}, ${uId}, '${name}')" title="@${name} - Çıkarmak için tıkla" class="cursor-pointer w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 border-2 border-white dark:border-[#252525] flex items-center justify-center text-[10px] font-bold text-blue-600 dark:text-blue-400 leading-none hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900 transition-colors shadow-sm">${name.charAt(0).toUpperCase()}</div>`;
+                });
+                assigneeHtml += `</div>`;
+            }
+            assignSection = `
+            <div class="flex items-center gap-1 mt-2">
+                ${assigneeHtml}
+                ${!tIsDeleted ? `<button onclick="event.stopPropagation(); openAssignModal(${tId})" class="w-7 h-7 rounded-full bg-slate-50 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-500 hover:text-blue-500 hover:border-blue-500 transition-all text-sm shrink-0" title="Göreve Kişi Ekle">+</button>` : ''}
+            </div>`;
+        } else {
+            assignSection = `
+            <div class="flex items-center gap-1 mt-2">
+                <span class="text-sm font-bold text-indigo-500 dark:text-indigo-400">📁 Grup Projesi</span>
+            </div>`;
         }
 
         let formattedDescHtml = "";
@@ -688,9 +726,6 @@ function renderTasks(tasks) {
             });
         }
 
-        const safeTitle = tTitle ? tTitle.replace(/'/g, "\\'") : "";
-        const safeDescRaw = tDesc ? tDesc.replace(/'/g, "\\'").replace(/\n/g, "\\n") : "";
-        const safeDate = tDate || "";
         const checkClass = tIsCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 text-transparent hover:border-emerald-500";
         const titleStyle = tIsCompleted ? "line-through text-slate-400" : "text-slate-900 dark:text-white";
 
@@ -698,8 +733,32 @@ function renderTasks(tasks) {
             `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-yellow-400"><path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clip-rule="evenodd" /></svg>` :
             `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-slate-300 hover:text-yellow-400"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.563.044.889.77.448 1.152l-4.204 3.614a.562.562 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.614a.562.562 0 01.448-1.152l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>`;
 
+        let actionButtons = "";
+        if (!tIsDeleted) {
+            if (!isGroupTask) {
+                actionButtons += `<button class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all" onclick="event.stopPropagation(); toggleFavorite(${tId})">${starIcon}</button>`;
+            }
+
+            if (isAdminForTask) {
+                if (!isGroupTask) {
+                    actionButtons += `<div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>`;
+                }
+                actionButtons += `
+                    <button class="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all" onclick="event.stopPropagation(); startEditMode(${tId})">✏️</button>
+                    <button class="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" onclick="event.stopPropagation(); toggleBin(${tId})">🗑️</button>
+                `;
+            }
+        } else {
+            if (isAdminForTask) {
+                actionButtons += `
+                    <button class="px-3 py-1.5 text-blue-500 border border-blue-500 rounded-lg text-xs font-bold hover:bg-blue-500 hover:text-white transition-all" onclick="event.stopPropagation(); toggleBin(${tId})">GERİ YÜKLE</button>
+                    <button class="px-3 py-1.5 text-red-500 border border-red-500 rounded-lg text-xs font-bold hover:bg-red-50 hover:text-white transition-all ml-2" onclick="event.stopPropagation(); deleteTask(${tId})">SİL</button>
+                `;
+            }
+        }
+
         const li = document.createElement("li");
-        li.className = `task-item group flex items-start w-full p-4 mb-3 border rounded-xl shadow-sm transition-all ${canDrag ? 'cursor-move hover:scale-[1.005]' : 'cursor-default'} ${tIsCompleted ? 'bg-emerald-50/90 dark:bg-emerald-900/20 border-emerald-200' : `bg-white dark:bg-[#252525] ${borderClass}`}`;
+        li.className = `task-item group flex items-start w-full p-4 mb-3 border rounded-xl shadow-sm transition-all ${canDrag ? 'cursor-move hover:scale-[1.005]' : 'cursor-default'} ${bgClass} ${borderClass}`;
         li.draggable = canDrag;
         li.dataset.id = tId;
 
@@ -723,21 +782,10 @@ function renderTasks(tasks) {
                 <div class="mt-0.5">
                     ${formattedDescHtml}
                 </div>
-                <div class="flex items-center gap-1 mt-2">
-                    ${assigneeHtml}
-                    ${!tIsDeleted && !tGroupId ? `<button onclick="event.stopPropagation(); openAssignModal(${tId})" class="w-7 h-7 rounded-full bg-slate-50 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-500 hover:text-blue-500 hover:border-blue-500 transition-all text-sm shrink-0" title="Göreve Kişi Ekle">+</button>` : ''}
-                </div>
+                ${assignSection}
             </div>
             <div class="flex items-center shrink-0 gap-1">
-                ${!tIsDeleted ? `
-                    <button class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all" onclick="event.stopPropagation(); toggleFavorite(${tId})">${starIcon}</button>
-                    <div class="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-                    <button class="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all" onclick="event.stopPropagation(); startEditMode(${tId})">✏️</button>
-                    <button class="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all" onclick="event.stopPropagation(); toggleBin(${tId})">🗑️</button>
-                ` : `
-                    <button class="px-3 py-1.5 text-blue-500 border border-blue-500 rounded-lg text-xs font-bold hover:bg-blue-500 hover:text-white transition-all" onclick="event.stopPropagation(); toggleBin(${tId})">GERİ YÜKLE</button>
-                    <button class="px-3 py-1.5 text-red-500 border border-red-500 rounded-lg text-xs font-bold hover:bg-red-50 hover:text-white transition-all ml-2" onclick="event.stopPropagation(); deleteTask(${tId})">SİL</button>
-                `}
+                ${actionButtons}
             </div>
         `;
         list.appendChild(li);
@@ -881,7 +929,7 @@ async function toggleStatus(id) {
     if (taskIndex === -1) return;
 
     const task = globalTasks[taskIndex];
-    const currentStatus = task.isCompleted !== undefined ? task.isCompleted : task.IsCompleted;
+    const currentStatus = task.isCompleted === true || task.IsCompleted === true;
     const newStatus = !currentStatus;
 
     task.isCompleted = newStatus;
@@ -921,7 +969,7 @@ function startEditMode(id) {
 
     isEditing = true;
     editingId = id;
-    editingStatus = task.isCompleted !== undefined ? task.isCompleted : task.IsCompleted;
+    editingStatus = task.isCompleted === true || task.IsCompleted === true;
 
     document.getElementById("taskTitle").value = task.title || task.Title;
     const desc = task.description || task.Description;
@@ -1002,7 +1050,7 @@ function updateSidebarStats(tasks) {
     });
     const total = activeTasks.length;
     if (total === 0) { textEl.innerText = "0%"; barEl.style.width = "0%"; return; }
-    const completed = activeTasks.filter(t => t.isCompleted || t.IsCompleted).length;
+    const completed = activeTasks.filter(t => t.isCompleted === true || t.IsCompleted === true).length;
     const rate = Math.round((completed / total) * 100);
     textEl.innerText = `%${rate}`;
     barEl.style.width = `${rate}%`;
@@ -1105,7 +1153,7 @@ function openDailyModal(year, month, day) {
     } else {
         dayTasks.forEach(task => {
             const tTitle = task.title || task.Title;
-            const isCompleted = task.isCompleted || task.IsCompleted;
+            const isCompleted = task.isCompleted === true || task.IsCompleted === true;
             const checkClass = isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 text-transparent";
             const titleStyle = isCompleted ? "line-through text-slate-400" : "text-slate-900 dark:text-white";
 
