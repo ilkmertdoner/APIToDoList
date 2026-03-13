@@ -132,3 +132,5 @@ Artık uygulamadan bitiş tarihi olan bir görev eklediğinizde, bu görev arka 
 * Alt Görevler: Açıklama alanında -  ile başlayan metinlerin otomatik olarak tıklanabilir kutucuklara (checkbox) dönüşmesi.
 
 * Dark/Light Mode: Tailwind CSS ile entegre karanlık ve aydınlık tema desteği.
+
+* Grup Sistemi: Arkadaşlarınızı gruba ekleme, yetkilendirme, gruba özel görev ekleme işlemleri.

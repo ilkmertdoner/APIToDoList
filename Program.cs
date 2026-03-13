@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -17,8 +18,10 @@ builder.Services.AddCors(options =>
         policy =>
         {
             policy.WithOrigins("http://127.0.0.1:5500", "http://localhost:3000")
+                  .AllowAnyMethod()
                   .AllowAnyHeader()
-                  .AllowAnyMethod();
+                  .SetIsOriginAllowed(origin => true)
+                  .AllowCredentials();
         });
 });
 
@@ -35,8 +38,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/notificationHub"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
+        };
     });
 
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IUserIdProvider, CustomUserIdProvider>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -69,13 +89,13 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddScoped<GoogleCalendarService>();
 builder.Services.AddScoped<MicrosoftCalendarService>();
-
 builder.Configuration.AddJsonFile("microsoft-credentials.json", optional: true, reloadOnChange: true);
 builder.Configuration.AddJsonFile("google-credentials.json", optional: true, reloadOnChange: true);
-
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
+
+app.MapHub<TaskManagerApi.Service.NotificationHub>("/notificationHub");
 
 if (app.Environment.IsDevelopment())
 {
@@ -84,13 +104,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowFrontend");
-
 app.UseAuthentication();
-
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();

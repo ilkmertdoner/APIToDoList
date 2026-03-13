@@ -4,6 +4,8 @@ let myGroups = [];
 let currentGroupId = null;
 let currentGroupIsAdmin = false;
 
+let connection; 
+
 document.addEventListener("DOMContentLoaded", () => {
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
@@ -40,10 +42,73 @@ document.addEventListener("DOMContentLoaded", () => {
         display.title = username;
     }
 
+    if (typeof signalR !== 'undefined') {
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl("https://localhost:7133/notificationHub", {
+                accessTokenFactory: () => localStorage.getItem("jwtToken")
+            })
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on("ReceiveLog", function (action, details) {
+            const container = document.getElementById('recentActivities');
+            if (container) {
+                if (container.innerHTML.includes('Hareket bulunamadı.')) {
+                    container.innerHTML = '';
+                }
+                const newLogHtml = `
+                    <div class="p-3 bg-slate-50 dark:bg-[#252525] rounded-xl border border-slate-200 dark:border-slate-700 mb-2">
+                        <span class="block text-xs font-bold text-blue-500 mb-1">${action}</span>
+                        <span class="block text-xs text-slate-600 dark:text-slate-300">${details}</span>
+                    </div>
+                `;
+                container.insertAdjacentHTML('afterbegin', newLogHtml);
+            }
+
+            showToast(action, details);
+        });
+
+        connection.start().catch(err => console.error("SignalR Hatası:", err));
+    }
+
     loadGroups();
     getTasks();
     getRecentActivities();
 });
+
+function showToast(title, message) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'bg-white dark:bg-[#252525] border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl p-4 w-72 pointer-events-auto flex items-start gap-3 transition-transform duration-500 ease-out';
+    toast.style.transform = 'translateX(120%)';
+
+    toast.innerHTML = `
+        <div class="text-blue-500 mt-0.5 shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <h4 class="text-sm font-bold text-slate-800 dark:text-white truncate">${title}</h4>
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 break-words">${message}</p>
+        </div>
+    `;
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            toast.style.transform = 'translateX(0)';
+        });
+    });
+
+    setTimeout(() => {
+        toast.style.transform = 'translateX(120%)';
+        setTimeout(() => {
+            toast.remove();
+        }, 500);
+    }, 4000);
+}
 
 function toggleTheme() {
     const html = document.documentElement;
@@ -342,7 +407,6 @@ async function confirmAssignUser() {
             const data = await response.json();
             resultDiv.innerHTML = `<span class="text-emerald-500">✅ ${data.message}</span>`;
             getTasks();
-            getRecentActivities();
             setTimeout(closeAssignModal, 1500);
         } else {
             const err = await response.text();
@@ -359,7 +423,6 @@ async function removeUser(taskId, userId, userName) {
             const response = await fetch(`${apiUrl}/Tasks/${taskId}/assign/${userId}`, { method: "DELETE", headers: getHeaders() });
             if (response.ok) {
                 getTasks();
-                getRecentActivities();
             } else {
                 const err = await response.text();
                 alert(err);
@@ -475,23 +538,14 @@ function filterTasks(category) {
         case 'favorites':
             title.textContent = "⭐ Favoriler";
             filters.forEach(f => f.disabled = true);
-            fetchAndRender(`${apiUrl}/Tasks/favorites`);
+            getTasks();
             break;
         case 'deleted':
             title.textContent = "🗑️ Çöp Kutusu";
             filters.forEach(f => f.disabled = true);
-            fetchAndRender(`${apiUrl}/Tasks/bin`);
+            getTasks();
             break;
     }
-}
-
-async function fetchAndRender(url) {
-    try {
-        const response = await fetch(url, { method: "GET", headers: getHeaders() });
-        if (handleApiError(response)) return;
-        const tasks = await response.json();
-        renderTasks(tasks);
-    } catch (error) { console.error(error); }
 }
 
 async function getTasks() {
@@ -501,12 +555,16 @@ async function getTasks() {
     const sortOrder = document.getElementById("sortOrder")?.value || "default";
     const pageTitle = document.getElementById('pageTitle') ? document.getElementById('pageTitle').textContent : "Kişisel Görevlerim";
 
-    if (pageTitle.includes("Favoriler")) { fetchAndRender(`${apiUrl}/Tasks/favorites`); return; }
-    if (pageTitle.includes("Çöp Kutusu")) { fetchAndRender(`${apiUrl}/Tasks/bin`); return; }
-
     let queryUrl = `${apiUrl}/Tasks?search=${searchVal}&status=${statusVal}`;
-    if (priorityVal) queryUrl += `&priority=${priorityVal}`;
-    if (currentGroupId) queryUrl += `&groupId=${currentGroupId}`;
+
+    if (pageTitle.includes("Favoriler")) {
+        queryUrl = `${apiUrl}/Tasks/favorites`;
+    } else if (pageTitle.includes("Çöp Kutusu")) {
+        queryUrl = `${apiUrl}/Tasks/bin`;
+    } else {
+        if (priorityVal) queryUrl += `&priority=${priorityVal}`;
+        if (currentGroupId) queryUrl += `&groupId=${currentGroupId}`;
+    }
 
     try {
         const response = await fetch(queryUrl, { method: "GET", headers: getHeaders() });
@@ -803,21 +861,7 @@ async function toggleFavorite(id) {
         });
 
         if (response.ok) {
-            const data = await response.json();
-            const newFavState = data.isFavorite !== undefined ? data.isFavorite : data.IsFavorite;
-
-            const taskIndex = globalTasks.findIndex(t => (t.id || t.Id || t.taskId || t.TaskId) === id);
-            if (taskIndex > -1) {
-                globalTasks[taskIndex].isFavorite = newFavState;
-                globalTasks[taskIndex].IsFavorite = newFavState;
-            }
-
-            const pageTitle = document.getElementById('pageTitle') ? document.getElementById('pageTitle').textContent : "";
-            if (pageTitle.includes("Favoriler") && newFavState === false) {
-                getTasks();
-            } else {
-                renderTasks(globalTasks);
-            }
+            getTasks();
         }
     } catch (error) {
         console.error(error);
@@ -825,20 +869,14 @@ async function toggleFavorite(id) {
 }
 
 async function toggleBin(id) {
-    const taskIndex = globalTasks.findIndex(t => (t.id || t.Id || t.taskId || t.TaskId) === id);
-    if (taskIndex > -1) {
-        globalTasks.splice(taskIndex, 1);
-        renderTasks(globalTasks);
-    }
-
     try {
         const res = await fetch(`${apiUrl}/Tasks/bin/${id}`, { method: "PUT", headers: getHeaders() });
         if (!res.ok) {
             const err = await res.text();
             alert(`Hata: ${err}`);
-            getTasks();
         }
-    } catch (e) { console.error(e); getTasks(); }
+        getTasks();
+    } catch (e) { console.error(e); }
 }
 
 async function deleteTask(id) {
@@ -913,7 +951,6 @@ async function saveTask() {
         if (response.ok) {
             resetForm();
             getTasks();
-            getRecentActivities();
         } else {
             const errorMsg = await response.text();
             alert(`Hata: ${errorMsg}`);
@@ -932,10 +969,6 @@ async function toggleStatus(id) {
     const currentStatus = task.isCompleted === true || task.IsCompleted === true;
     const newStatus = !currentStatus;
 
-    task.isCompleted = newStatus;
-    task.IsCompleted = newStatus;
-    renderTasks(globalTasks);
-
     const title = task.title || task.Title;
     const desc = task.description || task.Description || "";
     const isFav = task.isFavorite === true || task.IsFavorite === true;
@@ -953,7 +986,7 @@ async function toggleStatus(id) {
                 Id: id, Title: title, Description: desc, IsCompleted: newStatus, isFavorite: isFav, Priority: priority, DueDate: dueDate && dueDate !== "null" ? dueDate : null, GroupId: tGroupId, GoogleCalendarEventId: eventId, MicrosoftCalendarEventId: msEventId
             })
         });
-        getRecentActivities();
+        getTasks();
     } catch (e) {
         console.error(e);
     }
@@ -1223,7 +1256,6 @@ async function submitCreateGroup() {
         if (response.ok) {
             closeCreateGroupModal();
             loadGroups();
-            getRecentActivities();
         } else {
             const err = await response.text();
             alert(`Hata: ${err}`);
@@ -1264,7 +1296,7 @@ async function openGroupSettings() {
             });
         }
     } catch (e) {
-        console.error(e);
+        console.error("Arkadaş listesi çekilemedi: ", e);
     }
 
     document.getElementById('groupSettingsModal').classList.remove('hidden');
@@ -1305,7 +1337,7 @@ async function openGroupSettings() {
             membersList.innerHTML = '<div class="text-center text-red-500 py-4">Üyeleri görme yetkiniz yok.</div>';
         }
     } catch (e) {
-        console.error(e);
+        console.error("Üye listesi çekilemedi: ", e);
         membersList.innerHTML = '<div class="text-center text-red-500 py-4">Üyeler yüklenemedi.</div>';
     }
 }

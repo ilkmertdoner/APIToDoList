@@ -1,8 +1,10 @@
-﻿    using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using TaskManagerApi.Data;
 using TaskManagerApi.Models;
+using TaskManagerApi.Service;
 
 namespace TaskManagerApi.Controllers
 {
@@ -12,8 +14,13 @@ namespace TaskManagerApi.Controllers
     public class FriendController : ControllerBase
     {
         private readonly AppDbContext _dbContext;
-        public FriendController(AppDbContext dbContext) { _dbContext = dbContext; }
-        
+        private readonly IHubContext<NotificationHub> _hubContext;
+        public FriendController(AppDbContext dbContext, IHubContext<NotificationHub> hubContext)
+        {
+            _dbContext = dbContext;
+            _hubContext = hubContext;
+        }
+
         private string GetUserIdFromHeader()
         {
             var UserIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value;
@@ -53,7 +60,7 @@ namespace TaskManagerApi.Controllers
 
             var Current = await _dbContext.Users.FindAsync(currentUserId);
 
-            var log = new ActivityLog
+            var currentUserLog = new ActivityLog
             {
                 TokenId = currentUserId.ToString(),
                 Action = "Arkadaşlık İsteği",
@@ -61,8 +68,22 @@ namespace TaskManagerApi.Controllers
                     $"Adlı Kullanıcıya Arkadaşlık İsteği Gönderdi."
             };
 
-            _dbContext.ActivityLogs.Add(log);
+            var targetUserLog = new ActivityLog
+            {
+                TokenId = targetUserId.ToString(),
+                Action = "Arkadaşlık İsteği",
+                Details = $"{Current.Username} Adlı Kullanıcı, Size Arkadaşlık İsteği Gönderdi."
+            };
+
+            _dbContext.ActivityLogs.Add(currentUserLog);
+            _dbContext.ActivityLogs.Add(targetUserLog);
             await _dbContext.SaveChangesAsync();
+
+            await _hubContext.Clients.User(currentUserLog.TokenId)
+                .SendAsync("ReceiveLog", currentUserLog.Action, currentUserLog.Details);
+            
+            await _hubContext.Clients.User(targetUserLog.TokenId)
+                .SendAsync("ReceiveLog", targetUserLog.Action, targetUserLog.Details);
 
             return Ok(new { message = "Arkadaşlık İsteği Gönderildi" });
         }
@@ -83,15 +104,29 @@ namespace TaskManagerApi.Controllers
             var Current = await _dbContext.Users.FindAsync(currentUserId);
             var Target = await _dbContext.Users.FindAsync(targetUserId);
 
-            var log = new ActivityLog
+            var currentUserLog = new ActivityLog
             {
                 TokenId = currentUserId.ToString(),
                 Action = "Arkadaşlıktan Çıkarıldınız",
                 Details = $"{Current.Username} Adlı Kullanıcı, {Target.Username} Adlı Kullanıcıyı Arkadaşlıktan Çıkardı"
             };
 
-            _dbContext.ActivityLogs.Add(log);
+            var targetUserLog = new ActivityLog
+            {
+                TokenId = targetUserId.ToString(),
+                Action = "Arkadaşlıktan Çıkarıldınız",
+                Details = $"{Current.Username} Adlı Kullanıcı, Sizi Arkadaşlıktan Çıkardı."
+            };
+
+            _dbContext.ActivityLogs.Add(currentUserLog);
+            _dbContext.ActivityLogs.Add(targetUserLog);
             await _dbContext.SaveChangesAsync();
+
+            await _hubContext.Clients.User(currentUserLog.TokenId)
+                .SendAsync("ReceiveLog", currentUserLog.Action, currentUserLog.Details);
+
+            await _hubContext.Clients.User(targetUserLog.TokenId)
+                .SendAsync("ReceiveLog", targetUserLog.Action, targetUserLog.Details);
 
             return Ok(new { message = "Arkadaşlıktan Çıkarıldı" });
         }
